@@ -13,45 +13,316 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>文字埋めワードゲーム</title>
-  <!-- Tailwind CSS CDN -->
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    /* 正解／不正解エフェクト用 */
+    /* エフェクトアニメーション */
     @keyframes shake {
-      0%,100% { transform: translateX(0); }
-      20%,60% { transform: translateX(-4px); }
-      40%,80% { transform: translateX(4px); }
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-4px); }
+      40%, 80% { transform: translateX(4px); }
     }
     .animate-shake { animation: shake 0.5s ease-in-out; }
     .animate-pulse-slow { animation: pulse 1s ease-in-out infinite; }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
-  <div id="game-container" class="bg-white p-6 rounded-2xl shadow-lg w-full max-w-md">
-    <h1 class="text-2xl sm:text-3xl font-bold text-center mb-6">文字埋めワードゲーム</h1>
-    <div id="game" class="space-y-4">
-      <p class="text-lg sm:text-xl text-center">
-        頭文字：<span id="head" class="font-semibold text-blue-500"></span>
-        最後の文字：<span id="tail" class="font-semibold text-blue-500"></span>
-      </p>
+  <div class="w-full max-w-md">
+    <!-- モード選択 -->
+    <div class="flex justify-center space-x-4 mb-4">
+      <button id="mode-practice" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600">
+        練習モード
+      </button>
+      <button id="mode-timeattack" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600">
+        タイムアタック
+      </button>
+      <button id="mode-streak" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+        連続正解
+      </button>
+    </div>
+
+    <!-- ゲームコンテナ -->
+    <div id="game-container" class="bg-white p-6 rounded-2xl shadow-lg">
+      <h1 class="text-2xl font-bold text-center mb-4">文字埋めワードゲーム</h1>
+      <p id="timer" class="text-center text-lg text-red-500 mb-2">&nbsp;</p>
+
+      <!-- ヒント表示 -->
+      <div class="text-center mb-2 space-x-2">
+        <span>頭文字：<span id="head" class="text-blue-500 font-semibold"></span></span>
+        <span>語尾：<span id="tail" class="text-blue-500 font-semibold"></span></span>
+      </div>
+
+      <!-- 回答フォーム -->
       <input
-        type="text"
         id="answer"
+        type="text"
         placeholder="ここに入力してEnter"
-        class="w-full border border-gray-300 rounded-lg px-4 py-3 sm:py-2 text-base sm:text-lg focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
+        class="w-full border rounded-lg px-4 py-3 text-base focus:ring-2 focus:ring-blue-400 mb-3"
       />
       <button
         id="submit"
-        class="w-full bg-blue-500 text-white font-semibold rounded-lg py-3 sm:py-2 text-base sm:text-lg hover:bg-blue-600 transition"
+        class="w-full bg-green-500 text-white py-3 rounded-lg hover:bg-green-600"
       >
         回答する
       </button>
-    </div>
-    <div id="feedback" class="mt-6 text-center h-16">
-      <p id="result" class="text-xl sm:text-2xl font-semibold"></p>
-      <p id="score" class="text-lg sm:text-xl text-green-600 mt-1"></p>
+
+      <!-- 合計スコア表示 -->
+      <p id="totalScore" class="text-center text-base text-gray-700 mt-2">合計スコア: 0</p>
+
+      <!-- シェア／リセットボタン -->
+      <div class="mt-2 flex justify-center space-x-2">
+        <button
+          id="shareBtn"
+          class="bg-indigo-500 text-white font-semibold rounded-lg px-4 py-2 hover:bg-indigo-600 disabled:opacity-50"
+          disabled
+        >
+          結果をシェア
+        </button>
+        <button
+          id="resetBtn"
+          class="bg-gray-400 text-white font-semibold rounded-lg px-4 py-2 hover:bg-gray-500 disabled:opacity-50"
+          disabled
+        >
+          リセット
+        </button>
+      </div>
+
+      <!-- フィードバック表示 -->
+      <div id="feedback" class="mt-4 text-center h-16 space-y-1">
+        <p id="result" class="text-xl font-semibold"></p>
+        <p id="score" class="text-lg text-green-600"></p>
+        <p id="streak" class="text-base text-blue-500">&nbsp;</p>
+        <p id="best-streak" class="text-base text-purple-500">&nbsp;</p>
+      </div>
     </div>
   </div>
-  <script src="app.js"></script>
+
+  <script>
+    // 状態
+    let words = [];
+    let candidates = [];
+    let mode = '';
+    let timeLeft = 60;
+    let scoreTA = 0;
+    let currentStreak = 0;
+    const bestStreak = parseInt(localStorage.getItem('bestStreak') || '0', 10);
+    let lastScore = 0;
+    let timerInterval;
+
+    // 要素取得
+    const headEl = document.getElementById('head');
+    const tailEl = document.getElementById('tail');
+    const answerEl = document.getElementById('answer');
+    const submitBtn = document.getElementById('submit');
+    const resetBtn = document.getElementById('resetBtn');
+    const shareBtn = document.getElementById('shareBtn');
+    const timerEl = document.getElementById('timer');
+    const totalScoreEl = document.getElementById('totalScore');
+    const resultEl = document.getElementById('result');
+    const scoreEl = document.getElementById('score');
+    const streakEl = document.getElementById('streak');
+    const bestEl = document.getElementById('best-streak');
+
+    // モードボタン
+    document.getElementById('mode-practice').addEventListener('click', () => init('practice'));
+    document.getElementById('mode-timeattack').addEventListener('click', () => init('time'));
+    document.getElementById('mode-streak').addEventListener('click', () => init('streak'));
+
+    // 辞書読み込み
+    fetch('words.json')
+      .then((res) => res.json())
+      .then((data) => { words = data; });
+
+    // 初期化
+    function init(m) {
+      mode = m;
+      resetUI();
+      startGame();
+
+      if (mode === 'time') startTimer();
+      updateStats();
+      updateTotalScore();
+
+      // 表示制御
+      timerEl.style.display = mode === 'time' ? 'block' : 'none';
+      streakEl.style.display = mode === 'streak' ? 'block' : 'none';
+      bestEl.style.display = mode === 'streak' ? 'block' : 'none';
+      totalScoreEl.style.display = mode === 'practice' ? 'none' : 'block';
+      shareBtn.disabled = true;
+      resetBtn.disabled = true;
+    }
+
+    // UIリセット
+    function resetUI() {
+      clearInterval(timerInterval);
+      timeLeft = 60;
+      scoreTA = 0;
+      currentStreak = 0;
+
+      timerEl.textContent = '';
+      answerEl.disabled = false;
+      submitBtn.disabled = false;
+
+      totalScoreEl.textContent = '合計スコア: 0';
+      resultEl.textContent = '';
+      scoreEl.textContent = '';
+      streakEl.textContent = '';
+      bestEl.textContent = `最高: ${bestStreak}`;
+    }
+
+    // タイマー開始
+    function startTimer() {
+      timerEl.textContent = `残り時間: ${timeLeft}s`;
+      timerInterval = setInterval(() => {
+        timeLeft--;
+        timerEl.textContent = `残り時間: ${timeLeft}s`;
+        if (timeLeft <= 0) {
+          clearInterval(timerInterval);
+          endTimeAttack();
+        }
+      }, 1000);
+    }
+
+    // タイムアップ処理
+    function endTimeAttack() {
+      answerEl.disabled = true;
+      submitBtn.disabled = true;
+      resultEl.textContent = `タイムアップ！正答数: ${scoreTA}`;
+      enableShare(scoreTA);
+      resetBtn.disabled = false;
+    }
+
+    // ゲーム開始
+    function startGame() {
+      resultEl.textContent = '';
+      scoreEl.textContent = '';
+      answerEl.disabled = false;
+      submitBtn.disabled = false;
+      pickPair();
+    }
+
+    // 問題抽出
+    function pickPair() {
+      const heads = [...new Set(words.map((w) => w[0]))];
+      const tails = [...new Set(words.map((w) => w.slice(-1)))];
+      do {
+        const h = heads[Math.floor(Math.random() * heads.length)];
+        const t = tails[Math.floor(Math.random() * tails.length)];
+        candidates = words.filter((w) => w[0] === h && w.slice(-1) === t);
+        headEl.textContent = h;
+        tailEl.textContent = t;
+      } while (!candidates.length);
+      answerEl.value = '';
+      answerEl.focus();
+    }
+
+    // シャッフル
+    function shuffle(arr) {
+      return arr
+        .map((v) => ({ v, sort: Math.random() }))
+        .sort((a, b) => a.sort - b.sort)
+        .map(({ v }) => v);
+    }
+
+    // 回答処理
+    submitBtn.addEventListener('click', () => {
+      const ans = answerEl.value.trim();
+      if (!ans || !candidates.includes(ans)) {
+        resultEl.textContent = '候補: ' + shuffle(candidates).slice(0, 3).join('、');
+        if (mode === 'practice' || mode === 'time') {
+          setTimeout(startGame, 1500);
+        } else if (mode === 'streak') {
+          answerEl.disabled = true;
+          submitBtn.disabled = true;
+          resetBtn.disabled = false;
+          enableShare(currentStreak);
+        }
+        return;
+      }
+
+      const pts = ans.length - 2;
+      if (mode === 'time') {
+        scoreTA++;
+        enableShare(scoreTA);
+      } else if (mode === 'streak') {
+        currentStreak++;
+        if (currentStreak > bestStreak) {
+          localStorage.setItem('bestStreak', currentStreak);
+        }
+        enableShare(currentStreak);
+      } else {
+        enableShare(pts);
+      }
+
+      showResult(true, pts);
+      updateTotalScore();
+    });
+
+    // Enterキー
+    answerEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submitBtn.click();
+    });
+
+    // リセット
+    resetBtn.addEventListener('click', () => {
+      currentStreak = 0;
+      resetUI();
+      startGame();
+    });
+
+    // 結果表示
+    function showResult(ok, pts) {
+      answerEl.disabled = true;
+      submitBtn.disabled = true;
+      if (ok) {
+        resultEl.textContent = '正解！';
+        resultEl.classList.add('text-green-500', 'animate-pulse-slow');
+        if (mode === 'time') {
+          scoreEl.textContent = `正答: ${scoreTA}`;
+        } else if (mode === 'streak') {
+          scoreEl.textContent = `連続: ${currentStreak}`;
+          bestEl.textContent = `最高: ${bestStreak}`;
+        } else {
+          scoreEl.textContent = `得点: ${pts}`;
+        }
+        setTimeout(startGame, 1500);
+      } else {
+        resultEl.textContent = '不正解';
+        resultEl.classList.add('text-red-500', 'animate-shake');
+      }
+    }
+
+    // ステータス更新
+    function updateStats() {
+      bestEl.textContent = `最高: ${bestStreak}`;
+    }
+    function updateTotalScore() {
+      if (mode === 'time') totalScoreEl.textContent = `合計スコア: ${scoreTA}`;
+      else if (mode === 'streak') totalScoreEl.textContent = `合計スコア: ${currentStreak}`;
+    }
+
+    // シェア活性化
+    function enableShare(score) {
+      lastScore = score;
+      shareBtn.disabled = false;
+    }
+
+    // シェア処理
+    shareBtn.addEventListener('click', () => {
+      let text = '';
+      const url = location.href;
+      if (mode === 'streak') text = `私のスコアは${lastScore}連続正解だったよ！あなたはどうかな？`;
+      else if (mode === 'time') text = `私は60秒で${lastScore}点だったよ！あなたは何点取れるかな？`;
+      else text = `私は練習モードで${lastScore}点取ったよ！`;
+      if (navigator.share) {
+        navigator.share({ title: '文字埋めワードゲーム', text, url }).catch(console.error);
+      } else {
+        window.open(
+          `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
+          '_blank'
+        );
+      }
+    });
+  </script>
 </body>
 </html>
